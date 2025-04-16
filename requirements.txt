@@ -1,0 +1,7 @@
+streamlit==1.32.0
+PyPDF2==3.0.1
+langchain==0.0.340
+transformers==4.36.0
+torch==2.1.0
+faiss-cpu==1.7.4
+numpy==1.24.0
