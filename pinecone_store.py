@@ -1,4 +1,5 @@
 import os
+import streamlit as st
 from pinecone import Pinecone
 from dotenv import load_dotenv
 from utils import get_embedding
@@ -7,6 +8,7 @@ from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import json
 import os
+import io
 load_dotenv()
 
 # Initialize the Pinecone client
@@ -18,9 +20,24 @@ index = pc.Index(os.environ.get("PINECONE_INDEX"))
 def upsert_vector(id: str, embedding: list, metadata: dict):
     index.upsert([(id, embedding, metadata)])
 
-def search(embedding: list, top_k: int = 5):
-    res = index.query(vector=embedding, top_k=top_k, include_metadata=True)
-    return [match['metadata'] for match in res['matches']]
+def search(embedding: list, top_k: int = 3):
+    # res = index.query(vector=embedding, top_k=top_k, include_metadata=True)
+    # return [match['metadata'] for match in res['matches']]
+    result = index.query(
+        vector=embedding,
+        top_k=top_k,
+        include_metadata=True,
+        include_values=False,  # Optional, you might not need full vector back
+    )
+    
+    filtered_matches = []
+    for match in result.matches:
+        score = match.score  
+        print("score",score)
+        if score >= 0.50:
+            filtered_matches.append((match.metadata, score))
+
+    return filtered_matches
 
 # Load multiple JSON files from 'faq_data' folder
 def load_json_bulk(folder_path: str = "zendesk"):
@@ -35,16 +52,28 @@ def load_json_bulk(folder_path: str = "zendesk"):
                 upsert_vector(unique_id, embedding, item)
 
 # Load csv file
-def load_csv(file_path: str):
-    with open(file_path, newline='') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for i, row in enumerate(reader):
+def load_csv(file_list):
+    for file in file_list:
+        content = file.read().decode("utf-8")
+        file.seek(0)
+
+        reader = csv.DictReader(io.StringIO(content))
+        rows = list(reader)  
+        total = len(rows)
+
+        progress = st.progress(0)
+
+        for i, row in enumerate(rows):
             combined_text = f"Q: {row['question']}\nA: {row['answer']}"
+            print(combined_text)
+
             embedding = get_embedding(combined_text)
-            upsert_vector(f"csv_{i}", embedding, row)
+            upsert_vector(f"{file.name}_{i}", embedding, row)
+
+            progress.progress((i + 1) / total) 
+
 
 #load pdfs
-
 def get_pdf_text(files):
     """Extract text from uploaded PDFs."""
     text = ""

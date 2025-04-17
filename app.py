@@ -1,4 +1,3 @@
-
 import streamlit as st
 import os
 from langchain.schema import HumanMessage, AIMessage
@@ -10,30 +9,35 @@ from openai import OpenAI
 from utils import get_embedding
 from utils import extract_ranking_sentence
 from pinecone_store import get_pdf_text
+from pinecone_store import load_csv
 from pinecone_store import split_text
 from pinecone_store import upsert_vector
 from pinecone_store import search
 from pinecone_store import load_json_bulk
 
 import os
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-if 'memory' not in st.session_state:
-    st.session_state.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+if "memory" not in st.session_state:
+    st.session_state.memory = ConversationBufferMemory(
+        memory_key="chat_history", return_messages=True
+    )
 
-if 'conversation_history' not in st.session_state:
+if "conversation_history" not in st.session_state:
     st.session_state.conversation_history = {"input": [], "output": []}
-    
+
+
 def process_pdf_documents(uploaded_files):
     """Process PDFs and store embeddings in Pinecone."""
     global index, document_chunks
-    
+
     text = get_pdf_text(uploaded_files)
     chunks = split_text(text)
-    document_chunks = chunks  
-    
+    document_chunks = chunks
+
     total = len(document_chunks)
     progress = st.progress(0)
 
@@ -42,108 +46,210 @@ def process_pdf_documents(uploaded_files):
         embedding = get_embedding(chunk)
         upsert_vector(f"pdf_chunk_{i}", embedding, metadata)
 
-        # Smooth progress update
         progress.progress((i + 1) / total)
 
-    st.sidebar.success(f"✅ Processed {len(uploaded_files)} pdf document(s) with {total} chunks.")
 
 # def generate_answer(query):
-#     """Retrieve relevant text and generate an answer"""
-#     print(f"🔍 User Query: {query}")
-#     ranking_sentence = extract_ranking_sentence(query)
-#     print(f"📌 Extracted Ranking Sentence: {ranking_sentence}")
-#     embeddings = get_embedding(ranking_sentence)
-#     print(f"📊 Embedding (first 5 values): {embeddings[:2]}")
-#     # Get  response
-#     result = search(embeddings)
-#     print(f"📦 Search Results: {result}")
-#     st.session_state.conversation_history["input"].append(query)
-#     st.session_state.conversation_history["output"].append(result)
+#     suggestions = []
+#     # Ask GPT whether this is a general or FAQ-related question
+#     intent_prompt = f"""
+#     Classify the user query below as one of the following:
+#     - "general": if it's a greeting.
+#     - "faq": if it's a question that might relate to Mawada.net's FAQs.
 
-#     # Save context to memory
-#     st.session_state.memory.save_context({"input": query}, {"output": result}) 
-#         # Return first answer or fallback
-#     if result:
-#         return result[0].get("answer", "No exact answer found.")
+#     Query: "{query}"
+
+#     Respond only with "general" or "faq".
+#     """
+
+#     intent_response = client.chat.completions.create(
+#         model="gpt-4.1-mini",
+#         messages=[
+#             {"role": "system", "content": "You classify user input into general or faq intent."},
+#             {"role": "user", "content": intent_prompt}
+#         ],
+#         temperature=0,
+#         max_tokens=10
+#     )
+
+#     intent = intent_response.choices[0].message.content.strip().lower()
+#     # print(f"📌 Detected Intent: {intent}")
+
+#     # Handle general conversation via GPT
+#     if intent == "general":
+#         general_reply_prompt = f"""
+#         You are a helpful and friendly assistant for the website Mawada.
+#         A user sent the following general message:
+
+#         "{query}"
+
+#         Respond politely and naturally as a helpful assistant might only if it is related to Mawada if not then say sorry I can not help.
+#         """
+
+#         reply_response = client.chat.completions.create(
+#             model="gpt-4.1-mini",
+#             messages=[
+#                 {"role": "system", "content": "You're a polite and helpful chatbot for Mawada.net."},
+#                 {"role": "user", "content": general_reply_prompt}
+#             ],
+#             temperature=0.7,
+#             max_tokens=100
+#         )
+
+#         response = reply_response.choices[0].message.content.strip()
+#         # print(f"💬 General GPT Response: {response}")
+
+#     # Handle FAQ-style questions by embedding + semantic search
 #     else:
-#         return "❌ No corresponding answer found."
+#         ranking_sentence = extract_ranking_sentence(query)
+#         # print(f"🔍 Ranking Sentence: {ranking_sentence}")
+
+#         embeddings = get_embedding(ranking_sentence)
+#         result = search(embeddings)
+
+#         if result:
+#             # for idx, item in enumerate(result[:3]):  # Adjust 3 for top-k (or any number)
+#             #     suggestion = f"**Question:** {item.get('question', 'No question found')}\n> {item.get('answer', 'No answer found')}"
+#             for item in result:
+#                 metadata, score = item
+#                 suggestion = f"**Question:** {metadata.get('question', 'No question found')}\n> {metadata.get('answer', 'No answer found')}"
+#                 suggestions.append(suggestion)
+
+#             response = result[0][0].get("answer", "No exact answer found.")
+#         else:
+#             response = "❌ لم أتمكن من العثور على إجابة تطابق سؤالك. حاول إعادة صياغته أو طرح سؤال آخر."
+#         # print(f"📦 FAQ Search Result: {response}")
+
+#     # Save to conversation history and memory
+#     st.session_state.conversation_history["input"].append(query)
+#     st.session_state.conversation_history["output"].append(response)
+#     st.session_state.memory.save_context({"input": query}, {"output": suggestions})
+
+#     return response
+
+
+# def generate_answer(query):
+#     suggestions = []
+#     # Step 1: Use chat model to decide how to respond
+#     system_prompt = """
+#     You are a helpful assistant for the website Mawada.net.
+
+#     When a user sends a message, follow these rules:
+
+#     - If the message is a greeting or small talk like "hi", "hello", "good morning", or "how are you", respond with a polite greeting and ask how you can assist.
+#     - If the message is a question or topic related to Mawada.net (services, accounts, subscriptions, support, etc.), respond ONLY with: faq
+#     - If the message is unrelated to Mawada.net or is off-topic, respond with: "I'm sorry, I can only help with questions related to Mawada.net."
+
+#     Do not explain or add anything else. Just reply as instructed.
+#     """
+
+#     classification_response = client.chat.completions.create(
+#         model="gpt-4.1-mini",
+#         messages=[
+#             {"role": "system", "content": system_prompt.strip()},
+#             {"role": "user", "content": query},
+#         ],
+#         temperature=0,
+#         max_tokens=50,
+#     )
+
+#     classification = classification_response.choices[0].message.content.strip().lower()
+
+#     # Step 2: Handle response
+#     if classification == "faq":
+#         # Continue with FAQ logic
+#         query_embedding = get_embedding(query)
+#         result = search(query_embedding)
+
+#         if result:
+#             # metadata, score = result[0]
+#             for item in result:
+#                 metadata, score = item
+#                 suggestion = f"**Question:** {metadata.get('question', 'No question found')}\n> {metadata.get('answer', 'No answer found')}"
+#                 suggestions.append(suggestion)
+#             response = metadata.get("answer", "No exact answer found.")
+#         else:
+#             response = "Sorry, I couldn't find an answer. Please rephrase your question or contact support."
+
+#     else:
+#         # Treat it as a general chatbot reply (greeting)
+#         response = (
+#             classification  # Should already be a polite greeting with "How can I help?"
+#         )
+#     st.session_state.conversation_history["input"].append(query)
+#     st.session_state.conversation_history["output"].append(response)
+#     st.session_state.memory.save_context({"input": query}, {"output": suggestions})
+#     return response
 
 def generate_answer(query):
     suggestions = []
+    
+    # Step 1: Classify the intent
+    system_prompt = """
+    You are a helpful assistant for the website Mawada.net.
 
-    # print(f"🧠 Incoming Query: {query}")
+    When a user sends a message, follow these rules:
 
-    # Ask GPT whether this is a general or FAQ-related question
-    intent_prompt = f"""
-    Classify the user query below as one of the following:
-    - "general": if it's a greeting.
-    - "faq": if it's a question that might relate to Mawada.net's FAQs.
+    - If the message is a greeting or small talk like "hi", "hello", "good morning", or "how are you", respond with a polite greeting and ask how you can assist.
+    - If the message is a question or topic related to Mawada.net (services, accounts, subscriptions, support, etc.), respond ONLY with: faq
+    - If the message is unrelated to Mawada.net or is off-topic, respond with: "I'm sorry, I can only help with questions related to Mawada.net."
 
-    Query: "{query}"
-
-    Respond only with "general" or "faq".
+    Do not explain or add anything else. Just reply as instructed.
     """
 
-    intent_response = client.chat.completions.create(
+    classification_response = client.chat.completions.create(
         model="gpt-4.1-mini",
         messages=[
-            {"role": "system", "content": "You classify user input into general or faq intent."},
-            {"role": "user", "content": intent_prompt}
+            {"role": "system", "content": system_prompt.strip()},
+            {"role": "user", "content": query},
         ],
         temperature=0,
-        max_tokens=10
+        max_tokens=50,
     )
 
-    intent = intent_response.choices[0].message.content.strip().lower()
-    # print(f"📌 Detected Intent: {intent}")
+    classification = classification_response.choices[0].message.content.strip().lower()
 
-    # Handle general conversation via GPT
-    if intent == "general":
-        general_reply_prompt = f"""
-        You are a helpful and friendly assistant for the website Mawada.
-        A user sent the following general message:
+    # Step 2: Handle logic based on intent
+    if classification == "faq":
+        query_embedding = get_embedding(query)
+        result = search(query_embedding)
 
-        "{query}"
-
-        Respond politely and naturally as a helpful assistant might only if it is related to Mawada مودة if not then say sorry I can not help.
-        """
-
-        reply_response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": "You're a polite and helpful chatbot for Mawada.net."},
-                {"role": "user", "content": general_reply_prompt}
-            ],
-            temperature=0.7,
-            max_tokens=100
-        )
-
-        response = reply_response.choices[0].message.content.strip()
-        # print(f"💬 General GPT Response: {response}")
-
-    # Handle FAQ-style questions by embedding + semantic search
-    else:
-        ranking_sentence = extract_ranking_sentence(query)
-        # print(f"🔍 Ranking Sentence: {ranking_sentence}")
-
-        embeddings = get_embedding(ranking_sentence)
-        result = search(embeddings)
-        
         if result:
-            # for idx, item in enumerate(result[:3]):  # Adjust 3 for top-k (or any number)
-            #     st.markdown(f"**Suggestion {idx + 1}:**")
-            #     st.markdown(f"**Question:** {item.get('question', 'No question found')}")
-            #     st.markdown(f"> {item.get('answer', 'No answer found')}")
-            for idx, item in enumerate(result[:3]):  # Adjust 3 for top-k (or any number)
-                suggestion = f"**Question:** {item.get('question', 'No question found')}\n> {item.get('answer', 'No answer found')}"
-                suggestions.append(suggestion)
-
-            response = result[0].get("answer", "No exact answer found.")
+            for item in result:
+                metadata, score = item
+                suggestions.append(f"**Q:** {metadata.get('question', '')}\n**A:** {metadata.get('answer', '')}")
+            base_response = suggestions[0] if suggestions else "Sorry, I couldn't find an answer."
         else:
-            response = "❌ لم أتمكن من العثور على إجابة تطابق سؤالك. حاول إعادة صياغته أو طرح سؤال آخر."
-        # print(f"📦 FAQ Search Result: {response}")
+            base_response = "Sorry, I couldn't find an answer. Please rephrase your question or contact support."
+    
+    else:
+        base_response = classification  # greeting or apology already formatted
 
-    # Save to conversation history and memory
+    # Step 3: Finalize with chat model for a smooth, human-friendly reply
+    final_prompt = f"""
+    You are a friendly and smart assistant. Refine the message below into a natural, helpful response.
+
+    Original response:
+    {base_response}
+
+    If it's a list of FAQs, summarize and present it nicely.
+    If it's already a polite message (like a greeting or apology), just make it a bit friendlier.
+    If it's apology just keep it short.
+    """
+
+    final_response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {"role": "system", "content": "You refine assistant messages."},
+            {"role": "user", "content": final_prompt.strip()}
+        ],
+        temperature=0.5,
+        max_tokens=150
+    )
+
+    response = final_response.choices[0].message.content.strip()
+
+    # Save conversation
     st.session_state.conversation_history["input"].append(query)
     st.session_state.conversation_history["output"].append(response)
     st.session_state.memory.save_context({"input": query}, {"output": suggestions})
@@ -151,20 +257,33 @@ def generate_answer(query):
     return response
 
 
-# Streamlit UI
+# UI
 st.set_page_config(page_title="Info Extraction", page_icon=":books:", layout="wide")
 
 st.markdown("<h1 style='text-align: center;'>🔍 Mawada Ai</h1>", unsafe_allow_html=True)
 
-query_text = st.text_input("here", placeholder="📖 Ask a Question",label_visibility="collapsed")
+query_text = st.text_input(
+    "here", placeholder="📖 Ask a Question", label_visibility="collapsed"
+)
 
 with st.sidebar:
     st.subheader("📂 My Documents")
-    uploaded_files = st.file_uploader("PDF files", type=["pdf"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader(
+        "PDF files", type=["pdf"], accept_multiple_files=True
+    )
 
     if uploaded_files and st.button("Process PDF Documents"):
         with st.progress(0):
             process_pdf_documents(uploaded_files)
+
+    uploaded_csv_files = st.file_uploader(
+        "Upload CSV files", type="csv", accept_multiple_files=True
+    )
+
+    if uploaded_csv_files and st.button("Process CSV Files"):
+        with st.progress(0):
+            load_csv(uploaded_csv_files)
+
 
 if query_text and st.button("Answer"):
     with st.spinner("🔎 Searching and Generating Response..."):
@@ -181,10 +300,9 @@ if query_text and st.button("Answer"):
     if response:
         st.subheader("📝 AI Answer:")
         st.write(response)
-        
+
     else:
         st.warning("No response generated.")
-        
 
     with st.expander("💬 Conversation History:"):
         chat_data = st.session_state.memory.load_memory_variables({})
@@ -193,11 +311,8 @@ if query_text and st.button("Answer"):
         if chat_history:
             for message in chat_history:
                 if isinstance(message, HumanMessage):
-                    st.write(f"**Q:** {message.content}")  
+                    st.write(f"**Q:** {message.content}")
                 elif isinstance(message, AIMessage):
-                    st.write(f"**A:** {message.content}") 
+                    st.write(f"**A:** {message.content}")
         else:
             st.write("No Conversation History is Available")
-
- 
-
