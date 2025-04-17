@@ -14,6 +14,7 @@ from pinecone_store import split_text
 from pinecone_store import upsert_vector
 from pinecone_store import search
 from pinecone_store import load_json_bulk
+from pinecone_store import add_single_faq
 
 import os
 
@@ -204,7 +205,7 @@ def generate_answer(query):
             {"role": "user", "content": query},
         ],
         temperature=0,
-        max_tokens=50,
+        max_tokens=250,
     )
 
     classification = classification_response.choices[0].message.content.strip().lower()
@@ -217,37 +218,45 @@ def generate_answer(query):
         if result:
             for item in result:
                 metadata, score = item
-                suggestions.append(f"**Q:** {metadata.get('question', '')}\n**A:** {metadata.get('answer', '')}")
-            base_response = suggestions[0] if suggestions else "Sorry, I couldn't find an answer."
+                question = metadata.get('question')
+                answer = metadata.get('answer')
+                if question and answer:
+                    suggestions.append(f"**Q:** {question}\n**A:** {answer}")
+            if suggestions:
+                answer = suggestions[0].split("\n**A:**")[1].strip() if '**A:**' in suggestions[0] else "Sorry, I couldn't find an answer."
+                base_response =f"**Q:** {query}\n**A:** {answer}" 
         else:
-            base_response = "Sorry, I couldn't find an answer. Please rephrase your question or contact support."
+            base_response =""
     
     else:
-        base_response = classification  # greeting or apology already formatted
-
-    # Step 3: Finalize with chat model for a smooth, human-friendly reply
-    final_prompt = f"""
-    You are a friendly and smart assistant. Refine the message below into a natural, helpful response.
+        base_response = classification 
+        
+# Check if base_response is empty or whitespace
+    if not base_response.strip():
+        response = "Sorry, I couldn't find an answer. Please rephrase your question or contact support."
+    else:
+        # Finalize with chat model for a smooth, human-friendly reply
+        final_prompt = f"""
+     Refine the message below into a natural, helpful response.
 
     Original response:
     {base_response}
 
-    If it's a list of FAQs, summarize and present it nicely.
-    If it's already a polite message (like a greeting or apology), just make it a bit friendlier.
-    If it's apology just keep it short.
+    Do not explain the instructions again. The response should be polished and friendly, preserving all the important details. If it is an FAQ, organize and make it clear. If it's a greeting or an apology, just make it friendlier.
+
     """
 
-    final_response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": "You refine assistant messages."},
-            {"role": "user", "content": final_prompt.strip()}
-        ],
-        temperature=0.5,
-        max_tokens=150
-    )
+        final_response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": "You refine assistant messages."},
+                {"role": "user", "content": final_prompt.strip()}
+            ],
+            temperature=0.5,
+            max_tokens=400
+        )
 
-    response = final_response.choices[0].message.content.strip()
+        response = final_response.choices[0].message.content.strip()
 
     # Save conversation
     st.session_state.conversation_history["input"].append(query)
@@ -255,6 +264,7 @@ def generate_answer(query):
     st.session_state.memory.save_context({"input": query}, {"output": suggestions})
 
     return response
+
 
 
 # UI
@@ -284,6 +294,18 @@ with st.sidebar:
         with st.progress(0):
             load_csv(uploaded_csv_files)
 
+    # st.markdown("---")
+    # st.subheader("➕ Add FAQ")
+
+    # input_question = st.text_input("Question", key="faq_q")
+    # input_answer = st.text_area("Answer", key="faq_a")
+
+    # if st.button("Add FAQ"):
+    #     if input_question.strip() and input_answer.strip():
+    #         add_single_faq(input_question, input_answer)
+    #         st.success("FAQ added successfully!")
+    #     else:
+    #         st.warning("Please fill both question and answer.")
 
 if query_text and st.button("Answer"):
     with st.spinner("🔎 Searching and Generating Response..."):

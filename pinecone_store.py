@@ -4,6 +4,7 @@ from pinecone import Pinecone
 from dotenv import load_dotenv
 from utils import get_embedding
 import csv
+import uuid
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import json
@@ -65,14 +66,20 @@ def load_csv(file_list):
 
         for i, row in enumerate(rows):
             combined_text = f"Q: {row['question']}\nA: {row['answer']}"
-            print(combined_text)
+            # print(combined_text)
 
             embedding = get_embedding(combined_text)
             upsert_vector(f"{file.name}_{i}", embedding, row)
 
             progress.progress((i + 1) / total) 
 
-
+#Single query
+def add_single_faq(question:str, answer:str):
+    combined_text = f"Q: {question}\nA: {answer}"
+    embedding = get_embedding(combined_text)
+    unique_id = str(uuid.uuid4())  
+    upsert_vector(unique_id, embedding,{"text": combined_text}   )
+    
 #load pdfs
 def get_pdf_text(files):
     """Extract text from uploaded PDFs."""
