@@ -184,33 +184,42 @@ def process_pdf_documents(uploaded_files):
 
 def generate_answer(query):
     suggestions = []
+
+    # Step 1: Combined classification + language detection + friendly response
+    intent_prompt = f"""
+    You are a helpful multilingual chatbot assistant for the website Mawada.net.
+
+    Your tasks:
+    1. Detect the intent of the user message. It can be one of:
+        - greeting (like "hi", "hello", "good morning", "how are you")
+        - faq (any question related to Mawada.net services, accounts, subscriptions, or support)
+        - off-topic (anything unrelated to Mawada.net)
     
-    # Step 1: Classify the intent
-    system_prompt = """
-    You are a helpful assistant for the website Mawada.net.
+    2. Respond in the **same language** the user used.
 
-    When a user sends a message, follow these rules:
+    Instructions:
+    - If it's a greeting: reply warmly and ask how you can assist.
+    - If it's off-topic: respond politely that you can only assist with Mawada.net topics.
+    - If it's a valid Mawada.net question: respond with just the word: faq
 
-    - If the message is a greeting or small talk like "hi", "hello", "good morning", or "how are you", respond with a polite greeting and ask how you can assist.
-    - If the message is a question or topic related to Mawada.net (services, accounts, subscriptions, support, etc.), respond ONLY with: faq
-    - If the message is unrelated to Mawada.net or is off-topic, respond with: "I'm sorry, I can only help with questions related to Mawada.net."
-
-    Do not explain or add anything else. Just reply as instructed.
+    Don't explain the classification or your reasoning.
+    Only return the response.
+    User message:
+    \"\"\"{query}\"\"\"
     """
 
     classification_response = client.chat.completions.create(
         model="gpt-4.1-mini",
         messages=[
-            {"role": "system", "content": system_prompt.strip()},
-            {"role": "user", "content": query},
+            {"role": "system", "content": intent_prompt.strip()},
         ],
-        temperature=0,
+        temperature=0.3,
         max_tokens=250,
     )
 
     classification = classification_response.choices[0].message.content.strip().lower()
 
-    # Step 2: Handle logic based on intent
+    # Step 2: If classified as faq, search for best match and polish the result
     if classification == "faq":
         query_embedding = get_embedding(query)
         result = search(query_embedding)
@@ -223,40 +232,45 @@ def generate_answer(query):
                 if question and answer:
                     suggestions.append(f"**Q:** {question}\n**A:** {answer}")
             if suggestions:
-                answer = suggestions[0].split("\n**A:**")[1].strip() if '**A:**' in suggestions[0] else "Sorry, I couldn't find an answer."
-                base_response =f"**Q:** {query}\n**A:** {answer}" 
+                raw_answer = suggestions[0].split("\n**A:**")[1].strip() if '**A:**' in suggestions[0] else "Sorry, I couldn't find an answer."
+                base_response = f"**Q:** {query}\n**A:** {raw_answer}"
+            else:
+                base_response = "Sorry, I couldn't find an answer. Please rephrase your question or contact support."
         else:
-            base_response =""
-    
-    else:
-        base_response = classification 
-        
-# Check if base_response is empty or whitespace
-    if not base_response.strip():
-        response = "Sorry, I couldn't find an answer. Please rephrase your question or contact support."
-    else:
-        # Finalize with chat model for a smooth, human-friendly reply
+            base_response = "Sorry, I couldn't find an answer. Please rephrase your question or contact support."
+
+        # Step 2.5: Refine FAQ answer into natural language
         final_prompt = f"""
-     Refine the message below into a natural, helpful response.
+        You are a multilingual assistant for Mawada.net.
 
-    Original response:
-    {base_response}
+        The user asked the following question:
+        \"\"\"{query}\"\"\"
 
-    Do not explain the instructions again. The response should be polished and friendly, preserving all the important details. If it is an FAQ, organize and make it clear. If it's a greeting or an apology, just make it friendlier.
+        You are given a raw answer (possibly in Arabic). Your task:
+        - Rewrite it in a friendly and natural tone.
+        - Translate it into the same language the user used in the question.
+        - Keep the answer clear and helpful.
 
-    """
+        Raw answer:
+        \"\"\"{base_response}\"\"\"
+        """
+
 
         final_response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": "You refine assistant messages."},
-                {"role": "user", "content": final_prompt.strip()}
+                {"role": "system", "content": final_prompt.strip()},
+                {"role": "user", "content": query}
             ],
-            temperature=0.5,
+            temperature=1,
             max_tokens=400
         )
 
         response = final_response.choices[0].message.content.strip()
+
+    else:
+        # If not an FAQ, we already have the friendly message from the first call
+        response = classification
 
     # Save conversation
     st.session_state.conversation_history["input"].append(query)
@@ -268,12 +282,12 @@ def generate_answer(query):
 
 
 # UI
-st.set_page_config(page_title="Info Extraction", page_icon=":books:", layout="wide")
+st.set_page_config(page_title="Mawada - Chatbot", page_icon=":heart:", layout="wide")
 
-st.markdown("<h1 style='text-align: center;'>🔍 Mawada Ai</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>♥️ Mawada Ai</h1>", unsafe_allow_html=True)
 
 query_text = st.text_input(
-    "here", placeholder="📖 Ask a Question", label_visibility="collapsed"
+    "here", placeholder="🤖Ask a Question", label_visibility="collapsed"
 )
 
 with st.sidebar:

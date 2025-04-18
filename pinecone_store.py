@@ -35,7 +35,7 @@ def search(embedding: list, top_k: int = 3):
     for match in result.matches:
         score = match.score  
         print("score",score)
-        if score >= 0.50:
+        if score >= 0.70:
             filtered_matches.append((match.metadata, score))
 
     return filtered_matches
