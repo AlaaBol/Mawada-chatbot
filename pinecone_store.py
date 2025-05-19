@@ -47,10 +47,11 @@ def load_json_bulk(folder_path: str = "zendesk"):
         with open(os.path.join(folder_path, file_name)) as f:
             faq_data = json.load(f)
             for i, item in enumerate(faq_data):
-                combined_text = f"Q: {item['question']}\nA: {item['answer']}"
-                embedding = get_embedding(combined_text)
+                text = item["value"]  # extract the string value
+                embedding = get_embedding(text)
                 unique_id = f"{file_name}_{i}"
                 upsert_vector(unique_id, embedding, item)
+
 
 # Load csv file
 def load_csv(file_list):

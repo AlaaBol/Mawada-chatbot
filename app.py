@@ -22,6 +22,8 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
+
 if "memory" not in st.session_state:
     st.session_state.memory = ConversationBufferMemory(
         memory_key="chat_history", return_messages=True
@@ -45,6 +47,7 @@ def process_pdf_documents(uploaded_files):
     for i, chunk in enumerate(document_chunks):
         metadata = {"source": "pdf", "chunk": i, "text": chunk}
         embedding = get_embedding(chunk)
+        print(f"pdf_chunk_{i}")
         upsert_vector(f"pdf_chunk_{i}", embedding, metadata)
 
         progress.progress((i + 1) / total)
@@ -198,8 +201,8 @@ def generate_answer(query):
     2. Respond in the **same language** the user used.
 
     Instructions:
-    - If it's a greeting: reply warmly and ask how you can assist.
-    - If it's off-topic: respond politely that you can only assist with Mawada.net topics.
+    - If it's a greeting: reply warmly and ask how you can assist in the **same language** the user used..
+    - If it's off-topic: respond politely that you can only assist with Mawada.net topics in the **same language** the user used..
     - If it's a valid Mawada.net question: respond with just the word: faq
 
     Don't explain the classification or your reasoning.
@@ -278,8 +281,6 @@ def generate_answer(query):
     st.session_state.memory.save_context({"input": query}, {"output": suggestions})
 
     return response
-
-
 
 # UI
 st.set_page_config(page_title="Mawada - Chatbot", page_icon=":heart:", layout="wide")
