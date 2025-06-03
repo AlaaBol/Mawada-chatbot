@@ -15,8 +15,13 @@ from pinecone_store import upsert_vector
 from pinecone_store import search
 from pinecone_store import load_json_bulk
 from pinecone_store import add_single_faq
-
+import tempfile
+from audio_recorder_streamlit import audio_recorder
 import os
+
+
+
+print("ClientSettings is working!")
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -51,139 +56,6 @@ def process_pdf_documents(uploaded_files):
         upsert_vector(f"pdf_chunk_{i}", embedding, metadata)
 
         progress.progress((i + 1) / total)
-
-
-# def generate_answer(query):
-#     suggestions = []
-#     # Ask GPT whether this is a general or FAQ-related question
-#     intent_prompt = f"""
-#     Classify the user query below as one of the following:
-#     - "general": if it's a greeting.
-#     - "faq": if it's a question that might relate to Mawada.net's FAQs.
-
-#     Query: "{query}"
-
-#     Respond only with "general" or "faq".
-#     """
-
-#     intent_response = client.chat.completions.create(
-#         model="gpt-4.1-mini",
-#         messages=[
-#             {"role": "system", "content": "You classify user input into general or faq intent."},
-#             {"role": "user", "content": intent_prompt}
-#         ],
-#         temperature=0,
-#         max_tokens=10
-#     )
-
-#     intent = intent_response.choices[0].message.content.strip().lower()
-#     # print(f"📌 Detected Intent: {intent}")
-
-#     # Handle general conversation via GPT
-#     if intent == "general":
-#         general_reply_prompt = f"""
-#         You are a helpful and friendly assistant for the website Mawada.
-#         A user sent the following general message:
-
-#         "{query}"
-
-#         Respond politely and naturally as a helpful assistant might only if it is related to Mawada if not then say sorry I can not help.
-#         """
-
-#         reply_response = client.chat.completions.create(
-#             model="gpt-4.1-mini",
-#             messages=[
-#                 {"role": "system", "content": "You're a polite and helpful chatbot for Mawada.net."},
-#                 {"role": "user", "content": general_reply_prompt}
-#             ],
-#             temperature=0.7,
-#             max_tokens=100
-#         )
-
-#         response = reply_response.choices[0].message.content.strip()
-#         # print(f"💬 General GPT Response: {response}")
-
-#     # Handle FAQ-style questions by embedding + semantic search
-#     else:
-#         ranking_sentence = extract_ranking_sentence(query)
-#         # print(f"🔍 Ranking Sentence: {ranking_sentence}")
-
-#         embeddings = get_embedding(ranking_sentence)
-#         result = search(embeddings)
-
-#         if result:
-#             # for idx, item in enumerate(result[:3]):  # Adjust 3 for top-k (or any number)
-#             #     suggestion = f"**Question:** {item.get('question', 'No question found')}\n> {item.get('answer', 'No answer found')}"
-#             for item in result:
-#                 metadata, score = item
-#                 suggestion = f"**Question:** {metadata.get('question', 'No question found')}\n> {metadata.get('answer', 'No answer found')}"
-#                 suggestions.append(suggestion)
-
-#             response = result[0][0].get("answer", "No exact answer found.")
-#         else:
-#             response = "❌ لم أتمكن من العثور على إجابة تطابق سؤالك. حاول إعادة صياغته أو طرح سؤال آخر."
-#         # print(f"📦 FAQ Search Result: {response}")
-
-#     # Save to conversation history and memory
-#     st.session_state.conversation_history["input"].append(query)
-#     st.session_state.conversation_history["output"].append(response)
-#     st.session_state.memory.save_context({"input": query}, {"output": suggestions})
-
-#     return response
-
-
-# def generate_answer(query):
-#     suggestions = []
-#     # Step 1: Use chat model to decide how to respond
-#     system_prompt = """
-#     You are a helpful assistant for the website Mawada.net.
-
-#     When a user sends a message, follow these rules:
-
-#     - If the message is a greeting or small talk like "hi", "hello", "good morning", or "how are you", respond with a polite greeting and ask how you can assist.
-#     - If the message is a question or topic related to Mawada.net (services, accounts, subscriptions, support, etc.), respond ONLY with: faq
-#     - If the message is unrelated to Mawada.net or is off-topic, respond with: "I'm sorry, I can only help with questions related to Mawada.net."
-
-#     Do not explain or add anything else. Just reply as instructed.
-#     """
-
-#     classification_response = client.chat.completions.create(
-#         model="gpt-4.1-mini",
-#         messages=[
-#             {"role": "system", "content": system_prompt.strip()},
-#             {"role": "user", "content": query},
-#         ],
-#         temperature=0,
-#         max_tokens=50,
-#     )
-
-#     classification = classification_response.choices[0].message.content.strip().lower()
-
-#     # Step 2: Handle response
-#     if classification == "faq":
-#         # Continue with FAQ logic
-#         query_embedding = get_embedding(query)
-#         result = search(query_embedding)
-
-#         if result:
-#             # metadata, score = result[0]
-#             for item in result:
-#                 metadata, score = item
-#                 suggestion = f"**Question:** {metadata.get('question', 'No question found')}\n> {metadata.get('answer', 'No answer found')}"
-#                 suggestions.append(suggestion)
-#             response = metadata.get("answer", "No exact answer found.")
-#         else:
-#             response = "Sorry, I couldn't find an answer. Please rephrase your question or contact support."
-
-#     else:
-#         # Treat it as a general chatbot reply (greeting)
-#         response = (
-#             classification  # Should already be a polite greeting with "How can I help?"
-#         )
-#     st.session_state.conversation_history["input"].append(query)
-#     st.session_state.conversation_history["output"].append(response)
-#     st.session_state.memory.save_context({"input": query}, {"output": suggestions})
-#     return response
 
 def generate_answer(query):
     suggestions = []
@@ -287,9 +159,30 @@ st.set_page_config(page_title="Mawada - Chatbot", page_icon=":heart:", layout="w
 
 st.markdown("<h1 style='text-align: center;'>♥️ Mawada Ai</h1>", unsafe_allow_html=True)
 
-query_text = st.text_input(
-    "here", placeholder="🤖Ask a Question", label_visibility="collapsed"
-)
+# Create columns for input and audio recorder
+col1, col2 = st.columns([0.85, 0.15])  # Adjust ratios as needed
+
+with col1:
+    query_text = st.text_input(
+        "here", 
+        placeholder="🤖Ask a Question", 
+        label_visibility="collapsed",
+        key="main_input"
+    )
+
+with col2:
+    # Audio Recording Section - inline with input
+    audio_bytes = audio_recorder(
+        text="",
+        recording_color="#e8b62c",
+        neutral_color="#6aa36f",
+        icon_name="microphone-lines",
+        icon_size="2x",
+        key="inline_recorder"
+    )
+# query_text = st.text_input(
+#     "here", placeholder="🤖Ask a Question", label_visibility="collapsed"
+# )
 
 with st.sidebar:
     st.subheader("📂 My Documents")
@@ -308,19 +201,24 @@ with st.sidebar:
     if uploaded_csv_files and st.button("Process CSV Files"):
         with st.progress(0):
             load_csv(uploaded_csv_files)
+    audio_file = st.file_uploader("Upload your question (WAV or MP3)", type=["wav", "mp3", "m4a"])
 
-    # st.markdown("---")
-    # st.subheader("➕ Add FAQ")
+    if audio_file is not None:
+        with st.spinner("Transcribing audio..."):
+            transcription = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="text"
+            )
+            st.success("Transcription complete!")
+            st.write("✏️ Transcribed Text:")
+            st.write(transcription)
 
-    # input_question = st.text_input("Question", key="faq_q")
-    # input_answer = st.text_area("Answer", key="faq_a")
-
-    # if st.button("Add FAQ"):
-    #     if input_question.strip() and input_answer.strip():
-    #         add_single_faq(input_question, input_answer)
-    #         st.success("FAQ added successfully!")
-    #     else:
-    #         st.warning("Please fill both question and answer.")
+        # Use your existing RAG logic
+        with st.spinner("💡 Generating answer..."):
+            answer = generate_answer(transcription)
+            st.subheader("🤖 AI Answer:")
+            st.write(answer)
 
 if query_text and st.button("Answer"):
     with st.spinner("🔎 Searching and Generating Response..."):
@@ -353,3 +251,47 @@ if query_text and st.button("Answer"):
                     st.write(f"**A:** {message.content}")
         else:
             st.write("No Conversation History is Available")
+
+# Audio Recording Section
+# Method 1: Browser-based audio recorder
+# audio_bytes = audio_recorder(
+#     text="",
+#     recording_color="#e8b62c",
+#     neutral_color="#6aa36f",
+#     icon_name="microphone-lines",
+#     icon_size="2x",
+# )
+
+if audio_bytes:
+    st.audio(audio_bytes, format="audio/wav")
+    
+    with st.spinner("Transcribing audio..."):
+        # Save audio bytes to temporary file for OpenAI API
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+            tmp_file.write(audio_bytes)
+            tmp_file_path = tmp_file.name
+        
+        try:
+            with open(tmp_file_path, "rb") as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="text"
+                )
+            
+            st.success("Transcription complete!")
+            st.write("✏️ Transcribed Text:")
+            st.write(transcription)
+            
+                
+        except Exception as e:
+            st.error(f"Error processing audio: {str(e)}")
+        finally:
+            # Clean up temporary file
+            os.unlink(tmp_file_path)
+
+        # Automatically generate answer
+    with st.spinner("💡 Generating answer..."):
+        answer = generate_answer(transcription)
+        st.subheader("🤖 AI Answer:")
+        st.write(answer)

@@ -22,13 +22,11 @@ def upsert_vector(id: str, embedding: list, metadata: dict):
     index.upsert([(id, embedding, metadata)])
 
 def search(embedding: list, top_k: int = 3):
-    # res = index.query(vector=embedding, top_k=top_k, include_metadata=True)
-    # return [match['metadata'] for match in res['matches']]
     result = index.query(
         vector=embedding,
         top_k=top_k,
         include_metadata=True,
-        include_values=False,  # Optional, you might not need full vector back
+        include_values=False, 
     )
     
     filtered_matches = []
@@ -51,7 +49,6 @@ def load_json_bulk(folder_path: str = "zendesk"):
                 embedding = get_embedding(text)
                 unique_id = f"{file_name}_{i}"
                 upsert_vector(unique_id, embedding, item)
-
 
 # Load csv file
 def load_csv(file_list):
