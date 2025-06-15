@@ -154,10 +154,37 @@ def generate_answer(query):
 
     return response
 
+
 # UI
 st.set_page_config(page_title="Mawada - Chatbot", page_icon=":heart:", layout="wide")
 
 st.markdown("<h1 style='text-align: center;'>♥️ Mawada Ai</h1>", unsafe_allow_html=True)
+
+# Show onboarding popup once per session
+if "onboarding_shown" not in st.session_state:
+    st.session_state.onboarding_shown = True
+
+    with st.expander("👋 مرحبًا بك في Arabot", expanded=True):
+        st.markdown("""
+        ### 🤖 ما هو Arabot؟
+
+        Arabot هو مساعد ذكي تم تدريبه لمساعدتك في الإجابة على الأسئلة المتعلقة بمنصة Mawada.net.
+
+        ---
+        **ما الذي يمكنه فعله؟**
+        - ✅ الإجابة على الأسئلة الشائعة حول الحسابات والاشتراكات والخدمات.
+        - ✅ تحليل الملفات (PDF وCSV) واستخراج المعلومات.
+        - ✅ التعرف على الأسئلة الصوتية وتحويلها لنصوص والرد عليها.
+
+        **ما الذي لا يمكنه فعله؟**
+        - ❌ لا يمكنه تقديم استشارات قانونية أو دينية.
+        - ❌ لا يفهم الأسئلة الخارجة عن نطاق Mawada.net.
+        - ❌ قد لا تكون بعض الإجابات دقيقة 100%، تأكد دائمًا من المعلومات من المصدر.
+
+        ---
+        👂 **نصيحة**: استخدم اللغة العربية لنتائج أدق وأسهل فهمًا!
+        """)
+
 
 # Create columns for input and audio recorder
 col1, col2 = st.columns([0.85, 0.15])  # Adjust ratios as needed
@@ -219,25 +246,50 @@ with st.sidebar:
             answer = generate_answer(transcription)
             st.subheader("🤖 AI Answer:")
             st.write(answer)
+            col_like, col_dislike = st.columns([0.1, 0.1])
+            with col_like:
+                if st.button("👍", key=f"thumbs_up_{len(st.session_state.conversation_history['input'])}"):
+                    st.success("Thanks for your feedback! 😊")
 
-if query_text and st.button("Answer"):
+            with col_dislike:
+                if st.button("👎", key=f"thumbs_down_{len(st.session_state.conversation_history['input'])}"):
+                    st.warning("Thanks! We’ll use your feedback to improve. 🙏")
+
+# Button to trigger response generation
+if st.button("Answer") and query_text:
     with st.spinner("🔎 Searching and Generating Response..."):
         response = generate_answer(query_text)
+        st.session_state.last_query = query_text
+        st.session_state.last_response = response
 
-        # 🔽 Show results
-        # if isinstance(response, list):
-        #     for i, item in enumerate(response):
-        #         st.markdown(f"**Suggestion {i+1}:** {item.get('question', '')}")
-        #         st.markdown(f"> {item.get('answer', '')}")
-        # else:
-        #     st.warning(response)
+# Display response if already generated
+if "last_response" in st.session_state:
+    response = st.session_state.last_response
+    st.subheader("📝 AI Answer:")
+    st.write(response)
 
-    if response:
-        st.subheader("📝 AI Answer:")
-        st.write(response)
+    response_key = f"{len(st.session_state.conversation_history['input']) - 1}"
+    col1, col2, col3 = st.columns([0.1, 0.1, 0.1])
 
-    else:
-        st.warning("No response generated.")
+    with col1:
+        if st.button("👍", key=f"thumbs_up_{response_key}"):
+            st.session_state[f"feedback_{response_key}"] = "up"
+    with col2:
+        if st.button("👎", key=f"thumbs_down_{response_key}"):
+            st.session_state[f"feedback_{response_key}"] = "down"
+    with col3:
+        if st.button("🚩", key=f"report_{response_key}"):
+            st.session_state[f"feedback_{response_key}"] = "report"
+
+    # Show feedback acknowledgment
+    feedback = st.session_state.get(f"feedback_{response_key}")
+    if feedback == "up":
+        st.success("شكراً على تقييمك! 😊")
+    elif feedback == "down":
+        st.warning("شكراً! سنأخذ ملاحظتك بعين الاعتبار. 🙏")
+    elif feedback == "report":
+        st.error("تم الإبلاغ عن هذه الإجابة. فريق الدعم سيتحقق منها. 🚨")
+
 
     with st.expander("💬 Conversation History:"):
         chat_data = st.session_state.memory.load_memory_variables({})
@@ -252,15 +304,7 @@ if query_text and st.button("Answer"):
         else:
             st.write("No Conversation History is Available")
 
-# Audio Recording Section
-# Method 1: Browser-based audio recorder
-# audio_bytes = audio_recorder(
-#     text="",
-#     recording_color="#e8b62c",
-#     neutral_color="#6aa36f",
-#     icon_name="microphone-lines",
-#     icon_size="2x",
-# )
+# Audio Recording Section   
 
 if audio_bytes:
     st.audio(audio_bytes, format="audio/wav")
@@ -295,3 +339,5 @@ if audio_bytes:
         answer = generate_answer(transcription)
         st.subheader("🤖 AI Answer:")
         st.write(answer)
+        # Use a unique key for this message
+        
